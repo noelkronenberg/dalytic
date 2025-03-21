@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+
+<form method="POST" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label for="file" class="form-label">SQLite file</label>
+        <input class="form-control" type="file" name="file" accept=".sqlite,.db">
+    </div>
+    <button type="submit" class="btn btn-primary">Upload</button>
+</form>
+
+{% if session.get('custom_db') %}
+<div class="mt-3">
+
+    <div class="alert alert-info" role="alert">
+        A DB has been uploaded.
+    </div>
+
+    <a href="{{ url_for('download_db') }}" class="btn btn-success">
+        Download DB
+    </a>
+
+    <form method="POST" action="{{ url_for('reset_db') }}" class="d-inline">
+        <button type="submit" class="btn btn-danger">Delete DB</button>
+    </form>
+
+</div>
+{% endif %}
+
+{% endblock %}

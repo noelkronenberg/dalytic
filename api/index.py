@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify, session, send_file, flash
 
 import sqlite3
 import pandas as pd
@@ -11,8 +11,13 @@ import plotly.colors as pc
 import json
 import datetime
 import logging
+import os
+from werkzeug.utils import secure_filename
+
+FLASK_SECRET_KEY = os.environ.get('FLASK_SECRET_KEY')
 
 app = Flask(__name__)
+app.secret_key = FLASK_SECRET_KEY
 
 # configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s [%(funcName)s] %(message)s')
@@ -25,13 +30,94 @@ METRIC_CONFIG = {
     "Mood": {"type": "slider", "min": 1, "max": 5},
 }
 
-def get_db_connection():
+UPLOAD_FOLDER = 'data'
+ALLOWED_EXTENSIONS = {'sqlite', 'db'}
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+def allowed_file(filename):
     """
-    Create a connection to the SQLite database.
+    Check if the file extension is allowed.
     """
 
-    logging.debug('Connecting to the database.')
-    conn = sqlite3.connect('health_data.sqlite')
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/upload', methods=['GET', 'POST'])
+def upload_db():
+    """
+    Upload a custom SQLite database.
+    """
+
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            logging.debug('No file part.')
+            return redirect(request.url)
+
+        file = request.files['file']
+        if file.filename == '':
+            logging.debug('No selected file.')
+            return redirect(request.url)
+
+        if file and allowed_file(file.filename):
+            logging.debug(f'User uploaded file: {file.filename}')
+            
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+            session['custom_db'] = filepath
+
+            logging.debug(f'Uploaded file saved to: {filepath}')
+            return redirect(url_for('analysis'))
+
+        return render_template('upload.html')
+
+@app.route('/reset_db')
+def reset_db():
+    """
+    Revert to the default SQLite database and delete the uploaded file.
+    """
+
+    db_path = session.pop('custom_db', None)
+    if db_path and os.path.exists(db_path):
+        os.remove(db_path)
+        logging.debug(f'Deleted uploaded DB file: {db_path}')
+    else:
+        logging.debug('No uploaded DB file to delete.')
+
+    return redirect(url_for('analysis'))
+
+@app.route('/download_db')
+def download_db():
+    """
+    Allow user to download the current SQLite database.
+    """
+
+    db_path = session.get('custom_db')
+    if not db_path:
+        flash("Please upload a custom database before proceeding.")
+        return redirect(url_for('upload_db'))
+    logging.debug(f'User downloading DB: {db_path}')
+
+    return send_file(
+        db_path,
+        as_attachment=True,
+        download_name=os.path.basename(db_path),
+        mimetype='application/x-sqlite3'
+    )
+
+def get_db_connection():
+    """
+    Establish a connection to the SQLite database.
+    """
+
+    db_path = session.get('custom_db')
+    if not db_path:
+        flash("Please upload a custom database before proceeding.")
+        return redirect(url_for('upload_db'))
+    logging.debug(f'Using DB: {db_path}')
+
+    conn = sqlite3.connect(db_path)
     conn.execute('''
         CREATE TABLE IF NOT EXISTS health_data (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,8 +127,8 @@ def get_db_connection():
             UNIQUE(date, metric_name) ON CONFLICT REPLACE
         )
     ''')
-
     logging.debug('Database connection established.')
+
     return conn
 
 @app.route('/form', methods=['GET', 'POST'])
@@ -337,6 +423,3 @@ def index():
 
     logging.debug('Index route accessed.')
     return redirect(url_for('analysis'))
-
-if __name__ == '__main__':
-    app.run(debug=True)
