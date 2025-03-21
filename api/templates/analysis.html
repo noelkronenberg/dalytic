@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+    .modebar { display: none !important; }
+</style>
+
+<!-- combined metrics -->
+<div class="chart-container border mb-4">
+    <div id="combined-chart"></div>
+</div>
+
+<!-- correlations -->
+<div class="chart-container border">
+    <div id="correlation-chart"></div>
+</div>
+
+<!-- individual metrics -->
+<div class="row">
+    {% for i in range(num_graphs) %}
+    <div class="col-md-6 col-lg-4">
+        <div class="chart-container border mt-4">
+            <div id="chart{{ i + 1 }}"></div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+    var graphs = {{ graphJSON | safe }};
+    graphs.forEach((graph, index) => {
+        Plotly.newPlot('chart' + (index + 1), graph.data, graph.layout);
+    });
+
+    var combinedGraph = {{ combined_graphJSON | safe }};
+    Plotly.newPlot('combined-chart', combinedGraph.data, combinedGraph.layout);
+
+    var correlationChart = {{ correlation_chart_json | safe }};
+    Plotly.newPlot('correlation-chart', correlationChart.data, correlationChart.layout);
+</script>
+
+{% endblock %}

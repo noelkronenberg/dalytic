@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+
+<table class="table table-bordered table-striped mb-0">
+
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Date</th>
+            <th>Name</th>
+            <th>Value</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+
+    <tbody>
+        {% for row in data %}
+        <tr>
+            <td>{{ row[0] }}</td>
+            <td>{{ row[1] }}</td>
+            <td>{{ row[2] }}</td>
+            <td contenteditable="true" data-id="{{ row[0] }}" data-field="metric_value" class="editable">
+                {{ row[3] }}
+            </td>
+            <td>
+                <form action="{{ url_for('delete_entry', entry_id=row[0]) }}" method="POST" class="d-grid">
+                    <button type="submit" class="btn btn-danger btn-block">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+
+</table>
+
+<!-- update database entry -->
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+
+        // event listeners on editable cells
+        document.querySelectorAll(".editable").forEach(function (cell) {
+            
+            // restrict input to numbers and decimal points only
+            cell.addEventListener("keypress", function (event) {
+                if (!/[0-9.]/.test(event.key) || (event.key === '.' && cell.innerText.includes('.'))) {
+                    event.preventDefault();
+                }
+            });
+
+            // save changes when the cell loses focus
+            cell.addEventListener("blur", function () {
+                updateEntry(this);
+            });
+
+            // save changes when Enter key is pressed
+            cell.addEventListener("keydown", function (event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    this.blur();
+                }
+            });
+
+        });
+
+        // update database entry 
+        function updateEntry(cell) {
+
+            let entryId = cell.getAttribute("data-id");
+            let field = cell.getAttribute("data-field");
+            let newValue = cell.innerText.trim(); // new value from cell
+
+            // send update request to server
+            fetch(`/update_entry/${entryId}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ field: field, value: newValue })
+            }).then(response => response.json())
+            .then(data => {
+                if (data.status !== "success") {
+                    alert("Failed to update the entry."); // show alert if update failed
+                }
+            }).catch(error => console.error("Error updating entry:", error)); // log any errors
+        }
+    });
+    
+</script>
+
+{% endblock %}

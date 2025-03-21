@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+
+<form method="POST">
+
+    <div class="mb-3">
+        <label for="date" class="form-label">Date</label>
+        <input type="date" class="form-control" id="date" name="date" value="{{ current_date }}">
+    </div>
+
+    {% for metric, config in metric_config.items() %}
+        
+        {% if config.type == "slider" %}
+            <!-- slider input -->
+            <div class="mb-3">
+                <label for="{{ metric }}" class="form-label">
+                    {{ metric }} ({{ config.min }} - {{ config.max }})
+                </label>
+                <input type="range" class="form-range" id="{{ metric }}" name="{{ metric }}" 
+                       min="{{ config.min }}" max="{{ config.max }}" step="1"
+                       value="{{ last_entries[metric] }}"
+                       oninput="document.getElementById('{{ metric }}_value').textContent = this.value;">
+                <span id="{{ metric }}_value">{{ last_entries[metric] }}</span>
+            </div>
+        
+        {% else %}
+            <!-- numeric input -->
+            <div class="mb-3">
+                <label for="{{ metric }}" class="form-label">{{ metric }}</label>
+                <input type="number" class="form-control" step="any" inputmode="decimal" 
+                       id="{{ metric }}" name="{{ metric }}" 
+                       value="{{ last_entries[metric] }}">
+            </div>
+        {% endif %}
+
+    {% endfor %}
+
+    <button type="submit" class="btn btn-primary">Submit</button>
+    
+</form>
+
+{% endblock %}
