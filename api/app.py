@@ -254,7 +254,7 @@ def analysis():
 
     # combined metrics layout
     combined_layout = go.Layout(
-        title="Normalized Combined Metrics",
+        title="Metrics",
         xaxis=dict(tickformat='%d %b', tickangle=-0, nticks=10),
         autosize=True,
         margin=dict(t=65),
