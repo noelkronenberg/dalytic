@@ -36,6 +36,16 @@ ALLOWED_EXTENSIONS = {'sqlite', 'db'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+@app.before_request
+def require_db():
+    """
+    Require a custom database to be uploaded before accessing certain routes.
+    """
+    
+    if 'custom_db' not in session and request.endpoint not in ('upload_db', 'static'):
+        flash('Please upload a custom database before proceeding.')
+        return redirect(url_for('upload_db'))
+
 def allowed_file(filename):
     """
     Check if the file extension is allowed.
@@ -151,7 +161,11 @@ def form():
         if not selected_date:
             selected_date = current_date
 
-        conn = get_db_connection()
+        try:
+            conn = get_db_connection()
+        except RuntimeError:
+            return redirect(url_for('upload_db'))
+        
         for metric_name, _ in METRIC_CONFIG.items():
             value = request.form.get(metric_name, '0')
             logging.debug(f'Inserting data: {selected_date}, {metric_name}, {value}')
@@ -166,7 +180,10 @@ def form():
         return redirect(url_for('analysis'))
 
     # get previous values
-    conn = get_db_connection()
+    try:
+        conn = get_db_connection()
+    except RuntimeError:
+        return redirect(url_for('upload_db'))
     last_entries = {}
     for metric_name in METRIC_CONFIG.keys():
         last_entry = conn.execute(
@@ -378,7 +395,11 @@ def entries():
     """
 
     logging.debug('Entries route accessed.')
-    conn = get_db_connection()
+    try:
+        conn = get_db_connection()
+    except RuntimeError:
+        return redirect(url_for('upload_db'))
+    
     data = conn.execute('SELECT id, date, metric_name, metric_value FROM health_data ORDER BY date DESC').fetchall()
     conn.close()
     logging.debug('Entries fetched from database and connection closed.')
@@ -392,7 +413,11 @@ def delete_entry(entry_id):
     """
 
     logging.debug(f'Deleting entry with ID: {entry_id}')
-    conn = get_db_connection()
+    try:
+        conn = get_db_connection()
+    except RuntimeError:
+        return redirect(url_for('upload_db'))
+    
     conn.execute('DELETE FROM health_data WHERE id = ?', (entry_id,))
     conn.commit()
     conn.close()
@@ -414,7 +439,11 @@ def update_entry(entry_id):
         return jsonify({"status": "error", "message": "Invalid field"}), 400
 
     try:
-        conn = get_db_connection()
+        try:
+            conn = get_db_connection()
+        except RuntimeError:
+            return redirect(url_for('upload_db'))
+        
         conn.execute(f"UPDATE health_data SET {field} = ? WHERE id = ?", (new_value, entry_id))
         conn.commit()
         conn.close()
