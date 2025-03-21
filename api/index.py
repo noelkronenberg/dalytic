@@ -51,12 +51,14 @@ def upload_db():
 
     if request.method == 'POST':
         if 'file' not in request.files:
-            logging.debug('No file part.')
+            logging.error('No file part in the request.')
+            flash('No file part in the request.')
             return redirect(request.url)
 
         file = request.files['file']
         if file.filename == '':
-            logging.debug('No selected file.')
+            logging.error('No selected file.')
+            flash('No selected file. Please choose a file to upload.')
             return redirect(request.url)
 
         if file and allowed_file(file.filename):
@@ -69,10 +71,13 @@ def upload_db():
 
             logging.debug(f'Uploaded file saved to: {filepath}')
             return redirect(url_for('analysis'))
+        else:
+            logging.error('Invalid file extension.')
+            flash('Invalid file extension. Please upload a SQLite database file.')
 
-        return render_template('upload.html')
+    return render_template('upload.html')
 
-@app.route('/reset_db')
+@app.route('/reset_db', methods=['GET', 'POST'])
 def reset_db():
     """
     Revert to the default SQLite database and delete the uploaded file.
@@ -114,8 +119,8 @@ def get_db_connection():
     db_path = session.get('custom_db')
     if not db_path:
         flash("Please upload a custom database before proceeding.")
-        return redirect(url_for('upload_db'))
-    logging.debug(f'Using DB: {db_path}')
+        logging.error("No database uploaded.")
+        raise RuntimeError("No database uploaded")
 
     conn = sqlite3.connect(db_path)
     conn.execute('''
@@ -127,8 +132,8 @@ def get_db_connection():
             UNIQUE(date, metric_name) ON CONFLICT REPLACE
         )
     ''')
-    logging.debug('Database connection established.')
 
+    logging.debug('Database connection established.')
     return conn
 
 @app.route('/form', methods=['GET', 'POST'])
@@ -255,6 +260,7 @@ def normalize_dataframe(df):
             df[metric_name] = (df[metric_name] - min_val) / (max_val - min_val)
         else:
             df[[metric_name]] = scaler.fit_transform(df[[metric_name]])
+
     return df
 
 @app.route('/analysis')
@@ -265,7 +271,11 @@ def analysis():
 
     logging.debug('Analysis route accessed.')
 
-    conn = get_db_connection()
+    try:
+        conn = get_db_connection()
+    except RuntimeError:
+        return redirect(url_for('upload_db'))
+
     data = conn.execute('SELECT date, metric_name, metric_value FROM health_data').fetchall()
     conn.close()
     logging.debug('Data fetched from database and connection closed.')
