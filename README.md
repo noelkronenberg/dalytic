@@ -1,5 +1,6 @@
 # Dashboard
 
 ```bash
-python api/app.py
+cd api
+python index.py
 ```
