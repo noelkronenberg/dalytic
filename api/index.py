@@ -1,17 +1,12 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session, send_file, flash
 
+from statistics import mean
 import sqlite3
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
 
-import plotly
-import plotly.graph_objs as go
-import plotly.colors as pc
-
-import json
 import datetime
 import logging
 import os
+import json
 from werkzeug.utils import secure_filename
 
 FLASK_SECRET_KEY = os.environ.get('FLASK_SECRET_KEY')
@@ -19,10 +14,8 @@ FLASK_SECRET_KEY = os.environ.get('FLASK_SECRET_KEY')
 app = Flask(__name__)
 app.secret_key = FLASK_SECRET_KEY
 
-# configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s [%(funcName)s] %(message)s')
 
-# dynamically tracked metrics
 METRIC_CONFIG = {
     "Resting Heart Rate": {"type": "number"},
     "Sleep Hours": {"type": "number"},
@@ -32,18 +25,18 @@ METRIC_CONFIG = {
 
 UPLOAD_FOLDER = 'data'
 ALLOWED_EXTENSIONS = {'sqlite', 'db'}
-
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @app.before_request
 def require_db():
     """
-    Require a custom database to be uploaded before accessing certain routes.
+    Require a custom database to be uploaded before accessing any endpoint other than the upload endpoint.
     """
-    
+
     if 'custom_db' not in session and request.endpoint not in ('upload_db', 'static'):
         flash('Please upload a custom database before proceeding.')
+        logging.warning('No custom database uploaded')
         return redirect(url_for('upload_db'))
 
 def allowed_file(filename):
@@ -51,87 +44,83 @@ def allowed_file(filename):
     Check if the file extension is allowed.
     """
 
+    logging.debug(f'Checking if {filename} is an allowed file')
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_db():
     """
-    Upload a custom SQLite database.
+    Upload a custom SQLite database file.
     """
 
+    logging.debug('Accessing upload page')
+
     if request.method == 'POST':
-        if 'file' not in request.files:
-            logging.error('No file part in the request.')
-            flash('No file part in the request.')
-            return redirect(request.url)
+        file = request.files.get('file')
+        logging.debug(f'File uploaded: {file}')
 
-        file = request.files['file']
-        if file.filename == '':
-            logging.error('No selected file.')
+        if not file or file.filename == '':
             flash('No selected file. Please choose a file to upload.')
+            logging.warning('No file selected')
             return redirect(request.url)
-
-        if file and allowed_file(file.filename):
-            logging.debug(f'User uploaded file: {file.filename}')
-            
+        
+        if allowed_file(file.filename):
+            logging.debug(f'Allowed file: {file.filename}')
             filename = secure_filename(file.filename)
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(filepath)
             session['custom_db'] = filepath
-
-            logging.debug(f'Uploaded file saved to: {filepath}')
+            logging.debug(f'Uploaded and saved file: {filepath}')
             return redirect(url_for('analysis'))
         else:
-            logging.error('Invalid file extension.')
+            logging.warning(f'Invalid file extension: {file.filename}')
             flash('Invalid file extension. Please upload a SQLite database file.')
-
+    
+    logging.debug('Rendering upload page')
     return render_template('upload.html')
 
 @app.route('/reset_db', methods=['GET', 'POST'])
 def reset_db():
     """
-    Revert to the default SQLite database and delete the uploaded file.
+    Reset the custom database by deleting the uploaded file.
     """
 
+    logging.debug('Resetting custom database')
     db_path = session.pop('custom_db', None)
     if db_path and os.path.exists(db_path):
         os.remove(db_path)
-        logging.debug(f'Deleted uploaded DB file: {db_path}')
-    else:
-        logging.debug('No uploaded DB file to delete.')
+        logging.debug(f'Deleted file: {db_path}')
 
+    logging.debug('Redirecting to upload page')
     return redirect(url_for('analysis'))
 
 @app.route('/download_db')
 def download_db():
     """
-    Allow user to download the current SQLite database.
+    Download the custom database file.
     """
 
+    logging.debug('Downloading custom database')
     db_path = session.get('custom_db')
     if not db_path:
+        logging.warning('No custom database uploaded')
         flash("Please upload a custom database before proceeding.")
         return redirect(url_for('upload_db'))
-    logging.debug(f'User downloading DB: {db_path}')
-
-    return send_file(
-        db_path,
-        as_attachment=True,
-        download_name=os.path.basename(db_path),
-        mimetype='application/x-sqlite3'
-    )
+    
+    logging.debug(f'Sending file: {db_path}')
+    return send_file(db_path, as_attachment=True, download_name=os.path.basename(db_path), mimetype='application/x-sqlite3')
 
 def get_db_connection():
     """
-    Establish a connection to the SQLite database.
+    Get a connection to the custom database.
     """
 
     db_path = session.get('custom_db')
     if not db_path:
+        logging.warning('No custom database uploaded')
         flash("Please upload a custom database before proceeding.")
-        logging.error("No database uploaded.")
         raise RuntimeError("No database uploaded")
-
+    
     conn = sqlite3.connect(db_path)
     conn.execute('''
         CREATE TABLE IF NOT EXISTS health_data (
@@ -143,247 +132,266 @@ def get_db_connection():
         )
     ''')
 
-    logging.debug('Database connection established.')
+    logging.debug(f'Connected to database: {db_path}')
     return conn
 
 @app.route('/form', methods=['GET', 'POST'])
 def form():
     """
-    Display form for user to input data.
+    Display a form to input data.
     """
 
-    logging.debug('Form route accessed.')
+    logging.debug('Accessing form page')
     current_date = datetime.date.today().strftime('%Y-%m-%d')
 
     if request.method == 'POST':
-        logging.debug('Form submitted.')
-        selected_date = request.form.get('date', '')
-        if not selected_date:
-            selected_date = current_date
+        logging.debug('Form submitted')
 
+        selected_date = request.form.get('date', current_date)
+        
         try:
+            logging.debug('Connecting to database')
             conn = get_db_connection()
         except RuntimeError:
+            logging.warning('No custom database uploaded')
             return redirect(url_for('upload_db'))
         
-        for metric_name, _ in METRIC_CONFIG.items():
+        for metric_name in METRIC_CONFIG:
+            logging.debug(f'Inserting data for {metric_name}')
             value = request.form.get(metric_name, '0')
-            logging.debug(f'Inserting data: {selected_date}, {metric_name}, {value}')
-            conn.execute(
-                'INSERT INTO health_data (date, metric_name, metric_value) VALUES (?, ?, ?)',
-                (selected_date, metric_name, value)
-            )
+            conn.execute('INSERT INTO health_data (date, metric_name, metric_value) VALUES (?, ?, ?)',
+                         (selected_date, metric_name, value))
+            logging.debug(f'Inserted data for {metric_name}')
+
         conn.commit()
         conn.close()
-        logging.debug('Data inserted and database connection closed.')
+        logging.debug('Committed data to database and closed connection')
 
+        logging.debug('Redirecting to analysis page')
         return redirect(url_for('analysis'))
-
-    # get previous values
+    
     try:
+        logging.debug('Connecting to database')
         conn = get_db_connection()
     except RuntimeError:
+        logging.warning('No custom database uploaded')
         return redirect(url_for('upload_db'))
+    
     last_entries = {}
-    for metric_name in METRIC_CONFIG.keys():
-        last_entry = conn.execute(
-            'SELECT date, metric_value FROM health_data WHERE metric_name = ? ORDER BY date DESC LIMIT 1',
+    for metric_name in METRIC_CONFIG:
+        logging.debug(f'Fetching last entry for {metric_name}')
+        result = conn.execute(
+            'SELECT metric_value FROM health_data WHERE metric_name = ? ORDER BY date DESC LIMIT 1',
             (metric_name,)
         ).fetchone()
-
-        if last_entry:
-            last_entries[metric_name] = last_entry[1]
-        else:
-            last_entries[metric_name] = '0'
+        last_entries[metric_name] = result[0] if result else '0'
+        logging.debug(f'Fetching last entry for {metric_name}')
+    
     conn.close()
-    logging.debug('Last entries fetched and database connection closed.')
+    logging.debug('Closed database connection')
 
-    return render_template(
-        'form.html', 
-        metric_config=METRIC_CONFIG, 
-        current_date=current_date, 
-        last_entries=last_entries
-    )
+    logging.debug('Rendering form page')
+    return render_template('form.html', metric_config=METRIC_CONFIG, current_date=current_date, last_entries=last_entries)
 
-def calculate_correlations(data) -> str:
+def calculate_correlations(data):
     """
-    Calculate correlations between metrics, ensuring aligned dates.
+    Calculate the correlations between different metrics.
     """
 
-    df = pd.DataFrame(data, columns=['date', 'metric_name', 'metric_value'])
-    df['metric_value'] = df['metric_value'].astype(float)
+    logging.debug(f'Calculation of correlations initiated')
 
-    # one column for each metric
-    df_pivot = df.pivot(index='date', columns='metric_name', values='metric_value').dropna()
+    # group data by date and metric name
+    metrics = {}
+    for date, name, value in data:
+        metrics.setdefault(date, {})[name] = float(value)
+    logging.debug(f'Metrics: {metrics}')
 
-    unique_metrics = df_pivot.columns.tolist()
-    correlation_results = []
+    # align metrics
+    dates = sorted(metrics.keys())
+    aligned = {}
+    for date in dates:
+        row = metrics[date]
+        if all(k in row for k in METRIC_CONFIG):
+            for k, v in row.items():
+                aligned.setdefault(k, []).append(v)
+    logging.debug(f'Aligned metrics: {aligned}')
+
     metric_pairs = []
     correlation_values = []
 
-    for i, metric1 in enumerate(unique_metrics):
-        for j, metric2 in enumerate(unique_metrics):
-            if i < j: # avoid duplicate pairs and self-correlation
-                logging.debug(f'Calculating correlation between {metric1} and {metric2}.')
+    # calculate correlations
+    logging.debug(f'Calculating correlations')
+    keys = list(aligned.keys())
+    for i in range(len(keys)):
+        for j in range(i + 1, len(keys)):
 
-                # check value count
-                if len(df_pivot[metric1]) > 1 and len(df_pivot[metric2]) > 1:
-                    correlation = df_pivot[metric1].corr(df_pivot[metric2])
-                    correlation = round(correlation, 2)
-                    correlation_results.append((metric1, metric2, correlation))
-                    metric_pairs.append(f"{metric1} vs {metric2}")
-                    correlation_values.append(correlation)
-                    logging.debug(f'Correlation between {metric1} and {metric2}: {correlation}')
-                else:
-                    logging.debug(f'Not enough data to calculate correlation between {metric1} and {metric2}.')
+            # get data for each metric
+            m1, m2 = keys[i], keys[j]
+            x, y = aligned[m1], aligned[m2]
 
-    # sort by longest correlation
+            if len(x) < 2 or len(y) < 2:
+                logging.debug(f'Skipping {m1} vs {m2} due to insufficient data points')
+                continue
+
+            # calculate covariance
+            mx, my = mean(x), mean(y)
+            cov = sum((a - mx) * (b - my) for a, b in zip(x, y))
+
+            # calculate standard deviations
+            std_x = sum((a - mx) ** 2 for a in x) ** 0.5
+            std_y = sum((b - my) ** 2 for b in y) ** 0.5
+            
+            # calculate correlation coefficient
+            corr = cov / (std_x * std_y) if std_x and std_y else 0
+            corr = round(corr, 2)
+            
+            # store the metric pair and their correlation value
+            metric_pairs.append(f"{m1} vs {m2}")
+            correlation_values.append(corr)
+            
+    logging.debug(f'Calculated correlations')
+
+    # sort by correlation values
     sorted_indices = sorted(range(len(correlation_values)), key=lambda k: correlation_values[k], reverse=True)
     metric_pairs = [metric_pairs[i] for i in sorted_indices]
     correlation_values = [correlation_values[i] for i in sorted_indices]
 
-    # dynamic margin for longest label
-    max_label_length = max(len(pair) for pair in metric_pairs) if metric_pairs else 0
-    left_margin = max(100, max_label_length * 8) 
+    # create correlation bars
+    bars = [{"type": "bar", "x": [v], "y": [l], "orientation": "h", "marker": {"color": "blue"}} for v, l in zip(correlation_values, metric_pairs)]
+    max_label_length = max((len(l) for l in metric_pairs), default=10)
+    margin = max(100, max_label_length * 8) # adjust margin based on label length
+    logging.debug(f'Created bars')
 
-    correlation_chart_json = json.dumps({
-        "data": [
-            go.Bar(
-                x=correlation_values,
-                y=metric_pairs,
-                orientation='h'
-            )
-        ],
-        "layout": go.Layout(
-            title="Correlations",
-            margin=dict(t=65, l=left_margin),
-            autosize=True
-        )
-    }, cls=plotly.utils.PlotlyJSONEncoder)
+    # create correlation chart
+    chart = {
+        "data": bars,
+        "layout": {
+            "title": "Correlations",
+            "margin": {"t": 65, "l": margin},
+            "autosize": True,
+            "showlegend": False
+        }
+    }
 
-    return correlation_chart_json
+    logging.debug(f'Created correlation chart')
+    return json.dumps(chart)
 
-def normalize_dataframe(df):
+def normalize(value, min_val, max_val):
     """
-    Normalize a DataFrame's metric columns using MinMaxScaler to scale values between 0 and 1,
-    taking into account predefined min and max values for slider-type metrics.
+    Normalize a value between a minimum and maximum value.
     """
 
-    scaler = MinMaxScaler()
-    for metric_name in df.columns.difference(['date']):
-        if metric_name in METRIC_CONFIG and METRIC_CONFIG[metric_name]['type'] == 'slider':
-            min_val = METRIC_CONFIG[metric_name]['min']
-            max_val = METRIC_CONFIG[metric_name]['max']
-            df[metric_name] = (df[metric_name] - min_val) / (max_val - min_val)
-        else:
-            df[[metric_name]] = scaler.fit_transform(df[[metric_name]])
+    logging.debug(f'Normalizing value')
+    normalized_value = (value - min_val) / (max_val - min_val) if max_val != min_val else 0
 
-    return df
+    return round(normalized_value, 2)
 
 @app.route('/analysis')
 def analysis():
     """
-    Display analysis of the data.
+    Display a graph of the data.
     """
 
-    logging.debug('Analysis route accessed.')
+    logging.debug('Accessing analysis page')
 
     try:
+        logging.debug('Connecting to database')
         conn = get_db_connection()
     except RuntimeError:
+        logging.warning('No custom database uploaded')
         return redirect(url_for('upload_db'))
-
+    
+    logging.debug('Fetching data')
     data = conn.execute('SELECT date, metric_name, metric_value FROM health_data').fetchall()
     conn.close()
-    logging.debug('Data fetched from database and connection closed.')
+    logging.debug('Fetched data and closed database connection')
 
     if not data:
-        logging.debug('No data available for analysis.')
+        logging.warning('No data found')
         return render_template('analysis.html', graphJSON=None, combined_graphJSON=None, num_graphs=0, correlation_chart_json=None)
 
     correlation_chart_json = calculate_correlations(data)
+    entries = {}
 
-    # column for each metric
-    df = pd.DataFrame(data, columns=['date', 'metric_name', 'metric_value'])
-    df['date'] = pd.to_datetime(df['date'])
-    df['metric_value'] = df['metric_value'].astype(float)
-    df_pivot = df.pivot(index='date', columns='metric_name', values='metric_value')
+    # group data by date and metric name
+    for date, name, value in data:
+        entries.setdefault(name, []).append((date, float(value)))
+    logging.debug(f'Grouped entries')
 
-    # impute missing dates
-    df_pivot = df_pivot.reindex(pd.date_range(start=df['date'].min(), end=df['date'].max()), method='ffill')
-    df_pivot = df_pivot.reset_index().rename(columns={'index': 'date'})
-
-    # normalize data
-    normalized_df = normalize_dataframe(df_pivot.copy())
-
-    # generate color for each metric
-    colors = pc.qualitative.Set1 + pc.qualitative.Set2 + pc.qualitative.Set3
-    metric_colors = {metric: colors[i % len(colors)] for i, metric in enumerate(df_pivot.columns) if metric != 'date'}
-
-    # create a figure for each metric
     figures = []
-    combined_traces = []
-    for metric_name in df_pivot.columns:
-        if metric_name == 'date':
-            continue
+    metric_colors = ["red", "blue", "green", "orange", "purple", "brown", "pink", "gray", "cyan", "magenta"] # default colors
+    color_map = {}
 
-        color = metric_colors[metric_name]
-        fill_color = color.replace("rgb", "rgba").replace(")", ", 0.1)")
+    # create graphs
+    logging.debug(f'Creating graphs')
+    for idx, (metric, values) in enumerate(entries.items()):
+        dates, vals = zip(*sorted(values))
+        color = metric_colors[idx % len(metric_colors)]
+        color_map[metric] = color
+        trace = {
+            "x": dates,
+            "y": vals,
+            "mode": "lines",
+            "name": metric,
+            "fill": "tozeroy",
+            "line": {"color": color}
+        }
+        layout = {
+            "title": metric,
+            "xaxis": {"tickangle": -0},
+            "autosize": True,
+            "margin": {"t": 65}
+        }
+        figures.append({"data": [trace], "layout": layout})
+    logging.debug(f'Created graphs')
 
-        # individual metrics
-        trace = go.Scatter(
-            x=df_pivot['date'],
-            y=df_pivot[metric_name],
-            mode='lines',
-            name=metric_name,
-            fill='tozeroy',
-            fillcolor=fill_color,
-            line=dict(color=color)
-        )
-        
-        # combined metrics
-        combined_traces.append(
-            go.Scatter(
-                x=normalized_df['date'],
-                y=normalized_df[metric_name],
-                mode='lines',
-                name=metric_name,
-                fill='tozeroy',
-                fillcolor=fill_color,
-                line=dict(color=color)
-            )
-        )
+    # create combined graph
+    logging.debug(f'Creating combined graph')
+    normalized_traces = []
+    for metric, values in entries.items():
 
-        # individual metrics layout
-        layout = go.Layout(
-            title=metric_name,
-            xaxis=dict(tickformat='%d %b', tickangle=-0, nticks=3),
-            autosize=True,
-            margin=dict(t=65),
-        )
+        # normalize values
+        _, vals = zip(*sorted(values))
+        logging.debug(f'Normalizing values for {metric}')
+        if METRIC_CONFIG[metric]["type"] == "slider":
+            min_v = METRIC_CONFIG[metric]["min"]
+            max_v = METRIC_CONFIG[metric]["max"]
+            logging.debug(f'Using min and max values for normalization')
+        else:
+            min_v, max_v = min(vals), max(vals)
+            logging.debug(f'Using min and max values from data for normalization')
 
-        figures.append({'data': [trace], 'layout': layout})
-        logging.debug(f'Created figure for metric: {metric_name}')
+        # create normalized trace
+        logging.debug(f'Creating normalized trace for {metric}')
+        norm_vals = [normalize(v, min_v, max_v) for v in vals]
+        dates = [d for d, _ in sorted(values)]
+        trace = {
+            "x": dates,
+            "y": norm_vals,
+            "mode": "lines",
+            "name": metric,
+            "fill": "tozeroy",
+            "line": {"color": color_map[metric]}
+        }
+        normalized_traces.append(trace)
+    logging.debug(f'Created normalized traces')
 
-    # combined metrics layout
-    combined_layout = go.Layout(
-        title="Metrics",
-        xaxis=dict(tickformat='%d %b', tickangle=-0, nticks=10),
-        autosize=True,
-        margin=dict(t=65),
-        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
-    )
-    combined_figure = {'data': combined_traces, 'layout': combined_layout}
-    logging.debug('Created normalized combined metrics figure.')
+    # create combined layout
+    combined_layout = {
+        "title": "Metrics",
+        "xaxis": {"tickangle": -0},
+        "autosize": True,
+        "margin": {"t": 65},
+        "legend": {
+            "orientation": "h", "yanchor": "bottom", "y": -0.3, "xanchor": "center", "x": 0.5
+        }
+    }
 
-    graphJSON = json.dumps(figures, cls=plotly.utils.PlotlyJSONEncoder)
-    combined_graphJSON = json.dumps(combined_figure, cls=plotly.utils.PlotlyJSONEncoder)
-    logging.debug('Converted figures to JSON.')
-
+    logging.debug(f'Rendering analysis page')
     return render_template(
         'analysis.html',
-        graphJSON=graphJSON,
-        combined_graphJSON=combined_graphJSON,
+        graphJSON=json.dumps(figures),
+        combined_graphJSON=json.dumps({"data": normalized_traces, "layout": combined_layout}),
         num_graphs=len(figures),
         correlation_chart_json=correlation_chart_json
     )
@@ -391,74 +399,77 @@ def analysis():
 @app.route('/entries')
 def entries():
     """
-    Display all entries in the database.
+    Display all entries.
     """
 
-    logging.debug('Entries route accessed.')
     try:
+        logging.debug('Connecting to database')
         conn = get_db_connection()
     except RuntimeError:
+        logging.warning('No custom database uploaded')
         return redirect(url_for('upload_db'))
     
+    logging.debug('Fetching entries')
     data = conn.execute('SELECT id, date, metric_name, metric_value FROM health_data ORDER BY date DESC').fetchall()
     conn.close()
-    logging.debug('Entries fetched from database and connection closed.')
+    logging.debug('Fetched entries and closed database connection')
 
+    logging.debug('Rendering entries page')
     return render_template('entries.html', data=data)
 
 @app.route('/delete/<int:entry_id>', methods=['POST'])
 def delete_entry(entry_id):
     """
-    Delete an entry from the database.
+    Delete an entry.
     """
 
-    logging.debug(f'Deleting entry with ID: {entry_id}')
+    logging.debug(f'Deleting entry: {entry_id}')
+
     try:
+        logging.debug('Connecting to database')
         conn = get_db_connection()
     except RuntimeError:
+        logging.warning('No custom database uploaded')
         return redirect(url_for('upload_db'))
     
+    logging.debug(f'Deleting entry: {entry_id}')
     conn.execute('DELETE FROM health_data WHERE id = ?', (entry_id,))
     conn.commit()
     conn.close()
-    logging.debug('Entry deleted and database connection closed.')
+    logging.debug('Deleted entry and closed database connection')
 
+    logging.debug('Redirecting to entries page')
     return redirect(url_for('entries'))
 
 @app.route('/update_entry/<int:entry_id>', methods=['POST'])
 def update_entry(entry_id):
     """
-    Update an entry value in the database.
+    Update an entry.
     """
 
+    logging.debug(f'Updating entry: {entry_id}')
+
+    # get field and new value
     data = request.json
     field = data.get("field")
     new_value = data.get("value")
 
-    if field not in ["metric_value"]: # only allow updating the metric value
+    if field not in ["metric_value"]:
         return jsonify({"status": "error", "message": "Invalid field"}), 400
-
     try:
-        try:
-            conn = get_db_connection()
-        except RuntimeError:
-            return redirect(url_for('upload_db'))
-        
+        conn = get_db_connection()
         conn.execute(f"UPDATE health_data SET {field} = ? WHERE id = ?", (new_value, entry_id))
         conn.commit()
         conn.close()
-        logging.debug(f"Entry {entry_id} updated: {field} = {new_value}")
         return jsonify({"status": "success"})
-    
     except Exception as e:
-        logging.error(f"Error updating entry: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/')
 def index():
     """
-    Redirect to home.
+    Redirect to the analysis page.
     """
 
-    logging.debug('Index route accessed.')
+    logging.debug('Redirecting to analysis page')
     return redirect(url_for('analysis'))

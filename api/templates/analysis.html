@@ -29,15 +29,32 @@
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
     var graphs = {{ graphJSON | safe }};
+    var combinedGraph = {{ combined_graphJSON | safe }};
+    var correlationChart = {{ correlation_chart_json | safe }};
+
+    function plotGraph(containerId, graphData) {
+        if (!graphData || !graphData.data || !graphData.data.length) {
+            document.getElementById(containerId).innerHTML = '<div class="alert alert-warning" role="alert">No data points available</div>';
+            return;
+        }
+        const totalPoints = graphData.data.reduce((acc, trace) => {
+            const xLen = (trace.x && trace.x.length) || 0;
+            const yLen = (trace.y && trace.y.length) || 0;
+            return acc + Math.min(xLen, yLen);
+        }, 0);
+        if (totalPoints === 0) {
+            document.getElementById(containerId).innerHTML = '<div class="alert alert-warning" role="alert">No data points available</div>';
+        } else {
+            Plotly.newPlot(containerId, graphData.data, graphData.layout);
+        }
+    }
+
     graphs.forEach((graph, index) => {
-        Plotly.newPlot('chart' + (index + 1), graph.data, graph.layout);
+        plotGraph('chart' + (index + 1), graph);
     });
 
-    var combinedGraph = {{ combined_graphJSON | safe }};
-    Plotly.newPlot('combined-chart', combinedGraph.data, combinedGraph.layout);
-
-    var correlationChart = {{ correlation_chart_json | safe }};
-    Plotly.newPlot('correlation-chart', correlationChart.data, correlationChart.layout);
+    plotGraph('combined-chart', combinedGraph);
+    plotGraph('correlation-chart', correlationChart);
 </script>
 
 {% endblock %}
