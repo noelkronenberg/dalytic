@@ -7,7 +7,8 @@ import datetime
 import logging
 import os
 import json
-from werkzeug.utils import secure_filename
+import tempfile
+from io import BytesIO
 
 FLASK_SECRET_KEY = os.environ.get('FLASK_SECRET_KEY')
 
@@ -17,16 +18,25 @@ app.secret_key = FLASK_SECRET_KEY
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s [%(funcName)s] %(message)s')
 
 METRIC_CONFIG = {
-    "Resting Heart Rate": {"type": "number"},
-    "Sleep Hours": {"type": "number"},
-    "Calories": {"type": "number"},
-    "Mood": {"type": "slider", "min": 1, "max": 5},
+    "Resting Heart Rate": {
+        "type": "number", 
+        "color": "rgba(240,128,128,1.0)"
+    },
+    "Sleep Hours": {
+        "type": "number", 
+        "color": "rgba(135,206,250,1.0)"
+    },
+    "Calories": {
+        "type": "number", "color": "rgba(144,238,144,1.0)"
+    },
+    "Mood": {
+        "type": "slider",
+        "min": 1,
+        "max": 5,
+        "color": "rgba(255,182,193,1.0)"
+    },
 }
-
-UPLOAD_FOLDER = 'data'
 ALLOWED_EXTENSIONS = {'sqlite', 'db'}
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @app.before_request
 def require_db():
@@ -66,11 +76,8 @@ def upload_db():
         
         if allowed_file(file.filename):
             logging.debug(f'Allowed file: {file.filename}')
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
-            session['custom_db'] = filepath
-            logging.debug(f'Uploaded and saved file: {filepath}')
+            session['custom_db'] = file.read()
+            logging.debug('File data stored in session cookie.')
             return redirect(url_for('analysis'))
         else:
             logging.warning(f'Invalid file extension: {file.filename}')
@@ -82,58 +89,68 @@ def upload_db():
 @app.route('/reset_db', methods=['GET', 'POST'])
 def reset_db():
     """
-    Reset the custom database by deleting the uploaded file.
+    Reset the custom database by removing in-session data.
     """
 
     logging.debug('Resetting custom database')
-    db_path = session.pop('custom_db', None)
-    if db_path and os.path.exists(db_path):
-        os.remove(db_path)
-        logging.debug(f'Deleted file: {db_path}')
-
+    session.pop('custom_db', None)
     logging.debug('Redirecting to upload page')
     return redirect(url_for('analysis'))
 
 @app.route('/download_db')
 def download_db():
     """
-    Download the custom database file.
+    Download the custom database from in-session data.
     """
 
     logging.debug('Downloading custom database')
-    db_path = session.get('custom_db')
-    if not db_path:
+    data = session.get('custom_db')
+    if not data:
         logging.warning('No custom database uploaded')
         flash("Please upload a custom database before proceeding.")
         return redirect(url_for('upload_db'))
     
-    logging.debug(f'Sending file: {db_path}')
-    return send_file(db_path, as_attachment=True, download_name=os.path.basename(db_path), mimetype='application/x-sqlite3')
+    # in-memory data using BytesIO
+    in_memory_file = BytesIO(data)
+    logging.debug('Sending in-memory database file')
+    return send_file(
+        in_memory_file,
+        as_attachment=True,
+        download_name='database.sqlite',
+        mimetype='application/x-sqlite3'
+    )
 
 def get_db_connection():
     """
-    Get a connection to the custom database.
+    Load the uploaded database (stored in session) into an in-memory SQLite database.
     """
 
-    db_path = session.get('custom_db')
-    if not db_path:
+    data = session.get('custom_db')
+    if not data:
         logging.warning('No custom database uploaded')
         flash("Please upload a custom database before proceeding.")
         raise RuntimeError("No database uploaded")
     
-    conn = sqlite3.connect(db_path)
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS health_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL,
-            metric_name TEXT NOT NULL,
-            metric_value REAL NOT NULL,
-            UNIQUE(date, metric_name) ON CONFLICT REPLACE
-        )
-    ''')
+    # session bytes to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(data)
+        tmp_name = tmp.name
 
-    logging.debug(f'Connected to database: {db_path}')
-    return conn
+    # load temporary file into an in-memory database
+    logging.debug('Loading session bytes into in-memory database')
+    disk_conn = sqlite3.connect(tmp_name)
+    mem_conn = sqlite3.connect(":memory:")
+    
+    # copy data from disk to memory
+    disk_conn.backup(mem_conn)
+    disk_conn.close()
+    logging.debug('Loaded session bytes into in-memory database')
+    
+    os.remove(tmp_name) # remove temporary file
+    logging.debug('Removed temporary file')
+
+    logging.debug('Connected to in-memory database, loaded from session bytes.')
+    return mem_conn
 
 @app.route('/form', methods=['GET', 'POST'])
 def form():
@@ -204,7 +221,6 @@ def calculate_correlations(data):
     metrics = {}
     for date, name, value in data:
         metrics.setdefault(date, {})[name] = float(value)
-    logging.debug(f'Metrics: {metrics}')
 
     # align metrics
     dates = sorted(metrics.keys())
@@ -257,7 +273,7 @@ def calculate_correlations(data):
     correlation_values = [correlation_values[i] for i in sorted_indices]
 
     # create correlation bars
-    bars = [{"type": "bar", "x": [v], "y": [l], "orientation": "h", "marker": {"color": "blue"}} for v, l in zip(correlation_values, metric_pairs)]
+    bars = [{"type": "bar", "x": [v], "y": [l], "orientation": "h", "marker": {"color": "grey"}, "hoverinfo": "x+y"} for v, l in zip(correlation_values, metric_pairs)]
     max_label_length = max((len(l) for l in metric_pairs), default=10)
     margin = max(100, max_label_length * 8) # adjust margin based on label length
     logging.debug(f'Created bars')
@@ -269,7 +285,9 @@ def calculate_correlations(data):
             "title": "Correlations",
             "margin": {"t": 65, "l": margin},
             "autosize": True,
-            "showlegend": False
+            "showlegend": False,
+            "hoverlabel": {"namelength": -1},
+            "yaxis": {"tickangle": 0}
         }
     }
 
@@ -319,30 +337,42 @@ def analysis():
     logging.debug(f'Grouped entries')
 
     figures = []
-    metric_colors = ["red", "blue", "green", "orange", "purple", "brown", "pink", "gray", "cyan", "magenta"] # default colors
-    color_map = {}
 
     # create graphs
     logging.debug(f'Creating graphs')
-    for idx, (metric, values) in enumerate(entries.items()):
+    for metric, values in entries.items():
+        logging.debug(f'Creating graph for {metric}')
+
+        # sort values by date
         dates, vals = zip(*sorted(values))
-        color = metric_colors[idx % len(metric_colors)]
-        color_map[metric] = color
+
+        # get colors for metrics
+        line_color = METRIC_CONFIG[metric].get("color", "rgba(128,128,128,1.0)")
+        fill_color = line_color.replace('1.0)', '0.1)')
+        logging.debug(f'Got colors for metrics')
+
         trace = {
             "x": dates,
             "y": vals,
             "mode": "lines",
             "name": metric,
             "fill": "tozeroy",
-            "line": {"color": color}
+            "line": {"color": line_color},
+            "fillcolor": line_color
         }
         layout = {
             "title": metric,
-            "xaxis": {"tickangle": -0},
+            "xaxis": {
+                "tickangle": -0,
+                "tickformat": "%m-%d"
+            },
             "autosize": True,
             "margin": {"t": 65}
         }
+        
         figures.append({"data": [trace], "layout": layout})
+        logging.debug(f'Created graph for {metric}')
+
     logging.debug(f'Created graphs')
 
     # create combined graph
@@ -364,22 +394,37 @@ def analysis():
         # create normalized trace
         logging.debug(f'Creating normalized trace for {metric}')
         norm_vals = [normalize(v, min_v, max_v) for v in vals]
+
+        # sort dates
         dates = [d for d, _ in sorted(values)]
+
+        # get colors for metrics
+        line_color = METRIC_CONFIG[metric].get("color", "rgba(128,128,128,1.0)")
+        fill_color = line_color.replace('1.0)', '0.1)')
+        logging.debug(f'Got colors for metrics')
+        
+        # create trace
         trace = {
             "x": dates,
             "y": norm_vals,
             "mode": "lines",
             "name": metric,
             "fill": "tozeroy",
-            "line": {"color": color_map[metric]}
+            "line": {"color": line_color},
+            "fillcolor": fill_color
         }
         normalized_traces.append(trace)
-    logging.debug(f'Created normalized traces')
+        logging.debug(f'Created normalized trace for {metric}')
+    
+    logging.debug(f'Created traces')
 
     # create combined layout
     combined_layout = {
         "title": "Metrics",
-        "xaxis": {"tickangle": -0},
+        "xaxis": {
+            "tickangle": -0,
+            "tickformat": "%m-%d"
+        },
         "autosize": True,
         "margin": {"t": 65},
         "legend": {
