@@ -1,5 +1,7 @@
 # Dalytic
 
+Dashboard analytics for the everyday.
+
 ## Development
 
 Clone and open the repository locally:
