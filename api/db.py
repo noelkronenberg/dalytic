@@ -123,6 +123,18 @@ def get_db_connection():
     logging.debug('Connected to in-memory database, loaded from session bytes.')
     return mem_conn
 
+def backup_db_to_session(db_connection):
+    """
+    Backup the in-memory database to session data.
+    """
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False)
+    db_connection.backup(sqlite3.connect(temp_file.name))
+    temp_file.seek(0)
+    session['custom_db'] = temp_file.read()
+    temp_file.close()
+    logging.debug('Backed up database to session')
+
 # -----------------------------------------------------------
 # Data Handling
 # -----------------------------------------------------------
@@ -143,7 +155,7 @@ def entries():
     logging.debug('Fetching entries')
     data = conn.execute('SELECT id, date, metric_name, metric_value FROM health_data ORDER BY date DESC').fetchall()
     conn.close()
-    logging.debug('Fetched entries and closed database connection')
+    logging.debug('Fetched entries')
 
     logging.debug('Rendering entries page')
     return render_template('entries.html', data=data)
@@ -163,11 +175,11 @@ def delete_entry(entry_id):
         logging.warning('No custom database uploaded')
         return redirect(url_for('upload_db'))
     
-    logging.debug(f'Deleting entry: {entry_id}')
     conn.execute('DELETE FROM health_data WHERE id = ?', (entry_id,))
     conn.commit()
+    backup_db_to_session(conn) 
     conn.close()
-    logging.debug('Deleted entry and closed database connection')
+    logging.debug('Deleted entry')
 
     logging.debug('Redirecting to entries page')
     return redirect(url_for('entries'))
@@ -191,7 +203,10 @@ def update_entry(entry_id):
         conn = get_db_connection()
         conn.execute(f"UPDATE health_data SET {field} = ? WHERE id = ?", (new_value, entry_id))
         conn.commit()
+        backup_db_to_session(conn)
         conn.close()
+        logging.debug('Updated entry')
         return jsonify({"status": "success"})
     except Exception as e:
+        logging.error(f'Error updating entry') 
         return jsonify({"status": "error", "message": str(e)}), 500

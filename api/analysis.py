@@ -21,7 +21,7 @@ def analysis():
     logging.debug('Fetching data')
     data = conn.execute('SELECT date, metric_name, metric_value FROM health_data').fetchall()
     conn.close()
-    logging.debug('Fetched data and closed database connection')
+    logging.debug('Fetched data')
 
     if not data:
         logging.warning('No data found')

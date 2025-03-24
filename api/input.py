@@ -34,8 +34,9 @@ def form():
             logging.debug(f'Inserted data for {metric_name}')
 
         conn.commit()
+        backup_db_to_session(conn)
         conn.close()
-        logging.debug('Committed data to database and closed connection')
+        logging.debug('Committed data to database')
 
         logging.debug('Redirecting to analysis page')
         return redirect(url_for('analysis'))
@@ -56,9 +57,7 @@ def form():
         ).fetchone()
         last_entries[metric_name] = result[0] if result else '0'
         logging.debug(f'Fetching last entry for {metric_name}')
-    
     conn.close()
-    logging.debug('Closed database connection')
 
     logging.debug('Rendering form page')
     return render_template('form.html', metric_config=METRIC_CONFIG, current_date=current_date, last_entries=last_entries)
