@@ -255,6 +255,40 @@ def analysis():
     highest_date_formatted = datetime.strptime(highest_date, "%Y-%m-%d").strftime("%d/%m/%Y")
     time_span = f"{lowest_date_formatted} to {highest_date_formatted}"
 
+    def _has_enough_data(graph):
+        """
+        Check if a graph has enough data to render.
+        """
+
+        if not graph or 'data' not in graph:
+            return False
+
+        if isinstance(graph, str):
+            try:
+                graph = json.loads(graph)
+            except json.JSONDecodeError:
+                return False
+
+        for trace in graph['data']:
+
+            y = trace.get('y', [])
+            numeric_values = [v for v in y if isinstance(v, (int, float))]
+        
+            if len(numeric_values) >= 2:
+                return True
+        
+        return False
+
+    has_data = (
+        _has_enough_data(combined_figure) or
+        _has_enough_data(correlation_chart_json) or
+        any(_has_enough_data(g) for g in figures)
+    )
+    if has_data:
+        logging.debug(f'Enough data to render page')
+    else:
+        logging.warning(f'Not enough data to render page')
+
     logging.debug(f'Rendering analysis page')
     return render_template(
         'analysis.html',
@@ -262,5 +296,6 @@ def analysis():
         combined_graphJSON=json.dumps(combined_figure),
         num_graphs=len(figures),
         correlation_chart_json=correlation_chart_json,
-        time_span=time_span
+        time_span=time_span,
+        has_data=has_data
     )

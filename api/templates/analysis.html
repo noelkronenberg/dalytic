@@ -5,60 +5,61 @@
     .modebar { display: none !important; }
 </style>
 
-<!-- combined metrics -->
-<div class="chart-container border mb-4">
-    <div id="combined-chart"></div>
-</div>
+{% if has_data %}
 
-<!-- correlations -->
-<div class="chart-container border">
-    <div id="correlation-chart"></div>
-</div>
+    <!-- combined metrics -->
+    <div class="chart-container border mb-4">
+        <div id="combined-chart"></div>
+    </div>
 
-<!-- individual metrics -->
-<div class="row">
-    {% for i in range(num_graphs) %}
-    <div class="col-md-6 col-lg-4">
-        <div class="chart-container border mt-4">
-            <div id="chart{{ i + 1 }}"></div>
+    <!-- correlations -->
+    <div class="chart-container border">
+        <div id="correlation-chart"></div>
+    </div>
+
+    <!-- individual metrics -->
+    <div class="row">
+        {% for i in range(num_graphs) %}
+        <div class="col-md-6 col-lg-4">
+            <div class="chart-container border mt-4">
+                <div id="chart{{ i + 1 }}"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="mt-4">
+        <small class="text-muted">Time span: {{ time_span }}</small>
+    </div>    
+
+{% else %}
+
+    <div class="d-flex justify-content-center align-items-center" style="height: 300px;">
+        <div class="alert alert-warning text-center" role="alert">
+            No data points available to display any charts.
         </div>
     </div>
-    {% endfor %}
-</div>
 
-<div class="mt-4">
-    <small class="text-muted">Time span: {{ time_span }}</small>
-</div>
+{% endif %}
 
-<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-<script>
-    var graphs = {{ graphJSON | safe }};
-    var combinedGraph = {{ combined_graphJSON | safe }};
-    var correlationChart = {{ correlation_chart_json | safe }};
+{% if has_data %}
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>    
+    <script>
+        var graphs = {{ graphJSON | safe }};
+        var combinedGraph = {{ combined_graphJSON | safe }};
+        var correlationChart = {{ correlation_chart_json | safe }};
 
-    function plotGraph(containerId, graphData) {
-        if (!graphData || !graphData.data || !graphData.data.length) {
-            document.getElementById(containerId).innerHTML = '<div class="alert alert-warning" role="alert">No data points available</div>';
-            return;
+        function plotGraph(containerId, graphData) {
+                Plotly.newPlot(containerId, graphData.data, graphData.layout);
         }
-        const totalPoints = graphData.data.reduce((acc, trace) => {
-            const xLen = (trace.x && trace.x.length) || 0;
-            const yLen = (trace.y && trace.y.length) || 0;
-            return acc + Math.min(xLen, yLen);
-        }, 0);
-        if (totalPoints === 0) {
-            document.getElementById(containerId).innerHTML = '<div class="alert alert-warning" role="alert">No data points available</div>';
-        } else {
-            Plotly.newPlot(containerId, graphData.data, graphData.layout);
-        }
-    }
 
-    graphs.forEach((graph, index) => {
-        plotGraph('chart' + (index + 1), graph);
-    });
+        graphs.forEach((graph, index) => {
+            plotGraph('chart' + (index + 1), graph);
+        });
 
-    plotGraph('combined-chart', combinedGraph);
-    plotGraph('correlation-chart', correlationChart);
-</script>
+        plotGraph('combined-chart', combinedGraph);
+        plotGraph('correlation-chart', correlationChart);
+    </script>
+{% endif %}
 
 {% endblock %}
