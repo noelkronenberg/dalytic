@@ -2,6 +2,7 @@ from . import *
 
 from flask import render_template, redirect, url_for
 import json
+from datetime import datetime
 
 def calculate_correlations(data):
     """
@@ -87,7 +88,7 @@ def calculate_correlations(data):
         "layout": {
             "title": "Correlations",
             "hovermode": False,
-            "margin": {"t": 65, "l": margin, "r": 65, "b": 65},
+            "margin": {"t": 65, "l": margin, "r": 65, "b": 45},
             "autosize": True,
             "showlegend": False,
             "hoverlabel": {"namelength": -1},
@@ -170,12 +171,9 @@ def analysis():
         layout = {
             "title": metric,
             "hovermode": False,
-            "xaxis": {
-                "tickangle": -0,
-                "tickformat": "%m-%d"
-            },
+            "xaxis": {"visible": False},
             "autosize": True,
-            "margin": {"l": 65, "r": 65, "t": 65, "b": 65}
+            "margin": {"l": 65, "r": 65, "t": 65, "b": 45}
         }
         
         figures.append({
@@ -234,14 +232,11 @@ def analysis():
     combined_layout = {
         "title": "Metrics",
         "hovermode": False,
-        "xaxis": {
-            "tickangle": -0,
-            "tickformat": "%m-%d"
-        },
+        "xaxis": {"visible": False},
         "autosize": True,
         "margin": {"l": 65, "r": 65, "t": 65, "b": 65},
         "legend": {
-            "orientation": "h", "yanchor": "bottom", "y": -0.3, "xanchor": "center", "x": 0.5
+            "orientation": "h", "yanchor": "bottom", "y": -0.15, "xanchor": "center", "x": 0.5
         }
     }
 
@@ -252,11 +247,20 @@ def analysis():
         "config": {"staticPlot": True} # disable plotly interactivity
     }
 
+    # get time span
+    dates = [row[0] for row in data]
+    lowest_date = min(dates)
+    highest_date = max(dates)
+    lowest_date_formatted = datetime.strptime(lowest_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+    highest_date_formatted = datetime.strptime(highest_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+    time_span = f"{lowest_date_formatted} to {highest_date_formatted}"
+
     logging.debug(f'Rendering analysis page')
     return render_template(
         'analysis.html',
         graphJSON=json.dumps(figures),
         combined_graphJSON=json.dumps(combined_figure),
         num_graphs=len(figures),
-        correlation_chart_json=correlation_chart_json
+        correlation_chart_json=correlation_chart_json,
+        time_span=time_span
     )

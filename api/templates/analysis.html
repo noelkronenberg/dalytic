@@ -26,6 +26,10 @@
     {% endfor %}
 </div>
 
+<div class="mt-4">
+    <small class="text-muted">Time span: {{ time_span }}</small>
+</div>
+
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
     var graphs = {{ graphJSON | safe }};
