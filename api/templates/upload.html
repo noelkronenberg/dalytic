@@ -6,7 +6,11 @@
         <label for="file" class="form-label">SQLite file</label>
         <input class="form-control" type="file" name="file" accept=".sqlite,.db">
     </div>
-    <button type="submit" class="btn btn-primary">Upload</button>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Upload</button>
+        <a href="{{ url_for('use_empty_db') }}" class="btn btn-outline-primary">Use Empty DB</a>
+    </div>
 </form>
 
 {% if session.get('custom_db') %}

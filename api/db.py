@@ -15,7 +15,7 @@ def require_db():
     Require a custom database to be uploaded before accessing any endpoint other than the upload endpoint.
     """
 
-    if 'custom_db' not in session and request.endpoint not in ('upload_db', 'static'):
+    if 'custom_db' not in session and request.endpoint not in ('use_empty_db', 'upload_db', 'static'):
         flash('Please upload a custom database before proceeding.')
         logging.warning('No custom database uploaded')
         return redirect(url_for('upload_db'))
@@ -27,6 +27,31 @@ def allowed_file(filename):
 
     logging.debug(f'Checking if {filename} is an allowed file')
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/use_empty_db')
+def use_empty_db():
+    """
+    Load the empty database into session.
+    """
+
+    logging.debug('Loading empty database into session')
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""
+        CREATE TABLE health_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            metric_name TEXT NOT NULL,
+            metric_value REAL
+        )
+    """)
+    conn.commit()
+    backup_db_to_session(conn)
+    conn.close()
+    logging.debug('Created empty database table')
+
+    logging.debug('Redirecting to analysis page')
+    return redirect(url_for('form'))
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_db():
