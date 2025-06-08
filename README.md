@@ -4,6 +4,8 @@ A portable analytics dashboard for the everyday.
 
 ## Showcase
 
+> The app is live and hosted on Vercel: [dalytic.vercel.app](https://dalytic.vercel.app/)
+
 https://github.com/user-attachments/assets/bddf04eb-778b-4718-8575-cab005decfe4
 
 ## Set-up
