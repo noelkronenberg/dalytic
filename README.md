@@ -1,6 +1,6 @@
 # Dalytic
 
-Dashboard analytics for the everyday.
+A portable analytics dashboard for the everyday.
 
 ## Development
 
@@ -11,7 +11,7 @@ git clone https://github.com/noelkronenberg/dalytic.git # clone repository
 cd dalytic # change directory
 ```
 
-Run [Vercel](https://vercel.com/noelkronenbergs-projects/dalytic) deployment locally:
+Run Vercel deployment locally:
 
 ```bash
 npm i -g vercel # install Vercel CLI
