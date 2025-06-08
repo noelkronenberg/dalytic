@@ -22,3 +22,10 @@ npm i -g vercel # install Vercel CLI
 vercel env pull # pull environment variables ('FLASK_SECRET_KEY')
 vercel dev # start deployment server
 ```
+
+Run without Vercel locally:
+
+```bash
+export FLASK_SECRET_KEY=$(openssl rand -hex 32) # set secret key
+python run.py
+```
