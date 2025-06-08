@@ -6,27 +6,28 @@ A portable analytics dashboard for the everyday.
 
 https://github.com/user-attachments/assets/bddf04eb-778b-4718-8575-cab005decfe4
 
-## Development
+## Set-up
 
-Clone and open the repository locally:
+Clone and open the repository:
 
 ```bash
 git clone https://github.com/noelkronenberg/dalytic.git # clone repository
 cd dalytic # change directory
 ```
 
-Run Vercel deployment locally:
+Run the app locally:
+
+```bash
+pip install -r requirements.txt # install dependencies
+export FLASK_SECRET_KEY=$(openssl rand -hex 32) # set secret key
+python run.py # start deployment server
+```
+
+Alternatively, run a Vercel deployment locally (Vercel account and project needed):
 
 ```bash
 npm i -g vercel # install Vercel CLI
 vercel link # link to Vercel project
 vercel env pull # pull environment variables ('FLASK_SECRET_KEY')
 vercel dev # start deployment server
-```
-
-Run without Vercel locally:
-
-```bash
-export FLASK_SECRET_KEY=$(openssl rand -hex 32) # set secret key
-python run.py
 ```
