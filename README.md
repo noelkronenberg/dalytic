@@ -19,6 +19,7 @@ Run Vercel deployment locally:
 
 ```bash
 npm i -g vercel # install Vercel CLI
+vercel link # link to Vercel project
 vercel env pull # pull environment variables ('FLASK_SECRET_KEY')
 vercel dev # start deployment server
 ```
