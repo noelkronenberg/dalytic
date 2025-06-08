@@ -2,6 +2,10 @@
 
 A portable analytics dashboard for the everyday.
 
+## Showcase
+
+https://github.com/user-attachments/assets/bddf04eb-778b-4718-8575-cab005decfe4
+
 ## Development
 
 Clone and open the repository locally:
